@@ -141,7 +141,7 @@
       kpi('IMPLIED VALUE', fmtUsd(DATA.top_implied_usd), 'rank 1 · ' + DATA.rows[0].name + ' · ' + fmtUsd(DATA.rows[0].implied_value_usd)),
       kpi('TRADED COMPS', String(C.n_comps), 'already trade · fit the size curve, never ranked'),
       kpi('OUT-OF-SAMPLE', '×' + C.holdout_median_miss.toFixed(2), C.holdout_n + ' held-out comps · ' + Math.round(C.holdout_within_2x * 100) + '% within 2×', 'amber'),
-      kpi('WORTH FARMING', String(DATA.rows.filter(function (r) { return verdictOf(r).key === 'farm' || verdictOf(r).key === 'thin'; }).length), 'of ' + DATA.board_size + ' rows pass the net-of-cost test', 'mint'),
+      kpi('WORTH FARMING', String(DATA.rows.filter(function (r) { return verdictOf(r).key === 'farm'; }).length), 'best per hour +$' + Math.round(Math.max.apply(null, DATA.rows.map(function (r) { var v = verdictOf(r); return v.hours > 0 ? v.net / v.hours : 0; }))).toLocaleString('en-US') + ' · net of gas', 'mint'),
       kpi('UNIVERSE', String(DATA.accounting.reduce(function (a, s) { return a + s.count; }, 0)), 'every protocol in the snapshot accounted for')
     );
   }
@@ -363,26 +363,51 @@
         el('span', { class: 'sub', text: (row.category || 'Other') + ' · ' + (row.chains || []).join(', ') })),
       el('button', { class: 'close', type: 'button', text: 'Close', onclick: function () { dialog.close(); } })
     )));
+    // Running dollar value after each factor: the reader sees where the number comes from.
+    var steps = [];
+    var acc = row.size_value_usd;
+    steps.push(['Size curve', '×' + Math.pow(10, 0).toFixed(2), Math.round(acc), 'log(TVL) fitted on ' + C.n_comps + ' traded comps']);
+    var famVal = acc * Math.pow(10, row.family_offset);
+    steps.push(['Family (' + (row.category || 'Other') + ')', '×' + Math.pow(10, row.family_offset).toFixed(2), Math.round(famVal), 'category residual of the traded comps']);
+    acc = famVal * row.growth_mult;
+    steps.push(['Momentum', fmtX(row.growth_mult), Math.round(acc), '7d ' + fmtPct(row.change_7d) + ', weight ' + M.growth_weight]);
+    acc = acc * row.quiet_mult;
+    steps.push(['Time with no token', fmtX(row.quiet_mult), Math.round(acc), fmtAge(row.age_days) + ' since first listed']);
+    acc = acc * row.breadth_mult;
+    steps.push(['Chain breadth', fmtX(row.breadth_mult), Math.round(acc), row.chains.length + ' chains']);
+    acc = acc * row.class_weight;
+    steps.push(['Class weight', '×' + row.class_weight.toFixed(2), Math.round(acc), row.launch_class === 'derivative' ? 'wrapped / staked / exchange product' : 'a genuine pre-token protocol']);
+
     var body = el('div', { class: 'dbody' });
-    body.appendChild(el('section', { class: 'dsec' }, el('h3', { text: 'Implied value — the model shown' }),
-      el('div', { class: 'equation' },
-        el('div', null, el('span', { text: 'size curve' }), el('b', { text: fmtUsd(row.size_value_usd) })),
-        el('div', null, el('span', { text: 'family offset' }), el('b', { text: fmtX(Math.pow(10, row.family_offset)) })),
-        el('div', null, el('span', { text: '7d momentum' }), el('b', { text: fmtPct(row.change_7d) + ' → ' + fmtX(row.growth_mult) })),
-        el('div', null, el('span', { text: 'quiet time' }), el('b', { text: fmtAge(row.age_days) + ' → ' + fmtX(row.quiet_mult) })),
-        el('div', null, el('span', { text: 'chain breadth' }), el('b', { text: fmtX(row.breadth_mult) })),
-        el('div', null, el('span', { text: 'class weight' }), el('b', { text: '×' + row.class_weight.toFixed(2) })),
-        el('div', { class: 'hi' }, null, el('span', { text: 'implied value' }), el('b', { text: fmtUsd(row.implied_value_usd) })),
-        el('div', null, el('span', { text: 'P10–P90 band' }), el('b', { text: fmtUsd(row.low_usd) + ' – ' + fmtUsd(row.high_usd) }))
-      ),
+    body.appendChild(el('section', { class: 'dsec' }, el('h3', { text: 'How $' + fmtUsd(row.implied_value_usd).replace('$', '') + ' is built' }),
+      el('table', { class: 'build' }, el('thead', null, el('tr', null,
+        el('th', { text: 'FACTOR' }), el('th', { text: 'MULT' }), el('th', { text: 'VALUE' }), el('th', { text: 'WHY' })
+      )), el('tbody', null, steps.map(function (s) {
+        return el('tr', null, el('td', null, el('b', { text: s[0] })), el('td', { class: 'num', text: s[1] }), el('td', { class: 'num', text: fmtUsd(s[2]) }), el('td', { class: 'whycell', text: s[3] }));
+      }).concat([el('tr', { class: 'total' }, el('td', null, el('b', { text: 'Implied value' })), el('td', { text: 'round' }), el('td', { class: 'num', text: fmtUsd(row.implied_value_usd) }), el('td', { class: 'whycell', text: 'P10–P90 band ' + fmtUsd(row.low_usd) + ' – ' + fmtUsd(row.high_usd) }))]))),
       el('p', { class: 'why', html: 'Model <b>' + DATA.model_version + '</b> recomputes this row in the page to <b>' + fmtUsd(p.implied) + '</b> — ' + (p.implied === row.implied_value_usd ? 'the same number the board carries.' : 'stale data.') + ' ' + klass })
     ));
-    var plan = el('ol', { class: 'plan' });
-    row.farm_steps.forEach(function (s) {
+    var plan = el('table', { class: 'plantbl' }, el('thead', null, el('tr', null, el('th', { text: '#' }), el('th', { text: 'STEP' }), el('th', { text: 'COST' }), el('th', { text: 'TIME' }))));
+    var ptbody = el('tbody'); var fee = 0, mins = 0;
+    row.farm_steps.forEach(function (s, i) {
       var at = s.indexOf(' Cost: ');
-      plan.appendChild(el('li', null, el('div', { class: 'act', text: at >= 0 ? s.slice(0, at) : s }), el('em', { text: at >= 0 ? s.slice(at + 1) : '' })));
+      var action = at >= 0 ? s.slice(0, at) : s;
+      var tail = at >= 0 ? s.slice(at + 1) : '';
+      var parts = tail.split('. ');
+      var cost = (parts[0] || '').replace(/\.$/, '').replace(/^Cost:\s*/, '');
+      var time = (parts[1] || '').replace(/\.$/, '').replace(/^Time:\s*/, '');
+      var cd = (cost.match(/\$([\d.]+)/) || [])[1]; if (cd) fee += parseFloat(cd);
+      var td = (time.match(/([\d.]+)\s*min/) || [])[1]; if (td) mins += parseFloat(td);
+      ptbody.appendChild(el('tr', null, el('td', { class: 'num', text: String(i + 1) }), el('td', null, el('b', { text: action })), el('td', { class: 'num', text: cost }), el('td', { class: 'num', text: time })));
     });
-    body.appendChild(el('section', { class: 'dsec' }, el('h3', { text: 'How to farm it' }), plan));
+    plan.appendChild(ptbody);
+    var hh = (mins / 60).toFixed(1);
+    body.appendChild(el('section', { class: 'dsec' }, el('h3', { text: 'Farm plan — ' + v.label + ' · $' + fee.toFixed(2) + ' fees · ' + hh + ' h' }), plan,
+      el('div', { class: 'econ', html:
+        'Retail slice 0.1% of the low band ' + fmtUsd(row.low_usd) + ' ≈ <b>' + fmtUsd(row.low_usd * 0.001) + '</b> − fees <b>$' + fee.toFixed(2) + '</b> = net <b>' + (v.net >= 0 ? '+' : '−') + fmtUsd(Math.abs(v.net)) + '</b>' +
+        (v.hours > 0 ? ' · <b>' + fmtUsd(Math.max(0, v.net) / v.hours) + '/h</b>' : '')
+      })
+    ));
     body.appendChild(el('section', { class: 'dsec' }, el('div', { class: 'caveat', text:
       v.key === 'skip' ? 'On this model’s low-end band, even a 0.1% retail share does not cover the deposit and gas. Farm only if you disagree with the band.'
         : 'No launch is certain. Farm only with capital you can leave locked for the full window, and claim only from the protocol’s own pages.' })));

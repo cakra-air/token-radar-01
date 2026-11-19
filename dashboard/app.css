@@ -69,6 +69,24 @@ u { text-decoration: none; color: var(--mint); }
 .account-list { display: grid; gap: 5px; margin-top: 10px; }
 .account-row { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font: 500 10px/1.3 var(--mono); }
 .account-row b { color: var(--ink); }
+.lg.bridge { background: #3f7fa8; } .lg.staking { background: #6c6fae; } .lg.wrapped { background: #a46f8e; } .lg.kin { background: #3f5168; }
+
+.build, .plantbl { width: 100%; border-collapse: collapse; font: 500 10.5px/1.35 var(--mono); }
+.build th, .plantbl th { position: static; background: var(--panel2); padding: 5px 6px; border-bottom: 1px solid var(--line); color: var(--muted); font: 600 9px var(--mono); text-align: left; }
+.build td, .plantbl td { padding: 5px 6px; border-bottom: 1px solid var(--soft); }
+.build td:last-child, .plantbl td:last-child { color: var(--muted); }
+.build .total td { background: var(--mint-soft); color: var(--ink); }
+.build .total td.num { color: var(--mint); font-weight: 700; }
+.whycell { font-size: 9.5px; }
+.plantbl td:nth-child(2) b { font-weight: 500; }
+.plantbl { table-layout: fixed; }
+.plantbl th:first-child, .plantbl td:first-child { width: 20px; }
+.plantbl th:nth-child(2), .plantbl td:nth-child(2) { width: 52%; }
+.plantbl th:nth-child(3), .plantbl td:nth-child(3) { width: 29%; font-size: 9px; }
+.plantbl th:nth-child(4), .plantbl td:nth-child(4) { width: 17%; font-size: 9px; }
+.plantbl td { word-break: break-word; }
+.econ { margin-top: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg2); color: var(--muted); font: 500 10.5px/1.5 var(--mono); }
+.econ b { color: var(--mint); }
 
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 0 10px; }
 .toolbar input,.toolbar select { height: 30px; padding: 0 9px; background: var(--bg2); border: 1px solid var(--line); border-radius: var(--r-sm,6px); }

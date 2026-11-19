@@ -541,16 +541,33 @@ function evidence(snapshot: Snapshot, board: BoardRow[], ctx: ModelContext): { s
     x2: round4(hi), y2: round4(ctx.slope * hi + ctx.intercept),
   };
 
-  // A disjoint accounting of every slug in the sealed snapshot.
+  // A disjoint accounting of every slug in the sealed snapshot, by the rule
+  // that sets each one aside rather than by a hand-written name list.
   const pre = new Set(snapshot.protocols.filter(isPre).map((p) => p.slug));
   const traded = new Set(snapshot.protocols.filter((p) => !isPre(p) && p.category !== 'CEX' && p.tvl_usd > 0 && p.mcap_usd !== null && p.mcap_usd > 0).map((p) => p.slug));
-  const cex = new Set(snapshot.protocols.filter((p) => !pre.has(p.slug) && !traded.has(p.slug) && p.category === 'CEX').map((p) => p.slug));
-  const rest = snapshot.protocols.filter((p) => !pre.has(p.slug) && !traded.has(p.slug) && !cex.has(p.slug)).length;
+  const rest = snapshot.protocols.filter((p) => !pre.has(p.slug) && !traded.has(p.slug));
+  const isBridge = (p: SnapshotProtocol) => /bridge/i.test(p.category ?? '');
+  const isStaking = (p: SnapshotProtocol) => /staking|restak|staked|anchor btc|decentralized btc/i.test(p.category ?? '');
+  const isExchange = (p: SnapshotProtocol) => p.category === 'CEX' || EXCHANGES.some((e) => p.name.startsWith(e));
+  const isWrapped = (p: SnapshotProtocol) => WRAPPED.test(p.name);
+  const buckets = { bridge: 0, staking: 0, exchange: 0, wrapped: 0, version: 0, kin: 0 };
+  for (const p of rest) {
+    if (isBridge(p)) buckets.bridge++;
+    else if (isStaking(p)) buckets.staking++;
+    else if (isExchange(p)) buckets.exchange++;
+    else if (isWrapped(p)) buckets.wrapped++;
+    else if (VERSIONED.test(p.name)) buckets.version++;
+    else buckets.kin++;
+  }
   const accounting: AccountingSlice[] = [
     { label: 'ranked · no token on record', count: pre.size, tone: 'mint' },
     { label: 'traded comps · fit the curve', count: traded.size, tone: 'sky' },
-    { label: 'exchanges · set aside', count: cex.size, tone: 'amber' },
-    { label: 'versions of a token · set aside', count: rest, tone: 'dim' },
+    { label: 'bridges · a token already trades', count: buckets.bridge, tone: 'bridge' },
+    { label: 'liquid staking · product of a token', count: buckets.staking, tone: 'staking' },
+    { label: 'exchange custody · a wallet balance', count: buckets.exchange, tone: 'amber' },
+    { label: 'wrapped or staked by name', count: buckets.wrapped, tone: 'wrapped' },
+    { label: 'versioned · another pool of a protocol', count: buckets.version, tone: 'dim' },
+    { label: 'kin of a token · shares the ticker', count: buckets.kin, tone: 'kin' },
   ];
   return { scatter, fitLine, accounting };
 }

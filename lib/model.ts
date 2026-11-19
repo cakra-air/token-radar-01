@@ -149,6 +149,22 @@ export interface RadarRow {
   farm_steps: string[];
 }
 
+/** One point of the evidence chart: log10 TVL against log10 value. */
+export interface ScatterPoint {
+  x: number;
+  y: number;
+  kind: 'traded' | 'pre';
+  cat: string | null;
+  slug: string;
+}
+
+/** How the sealed universe of protocols is accounted for. */
+export interface AccountingSlice {
+  label: string;
+  count: number;
+  tone: string;
+}
+
 export interface LiveRow {
   slug: string;
   name: string;
@@ -171,6 +187,9 @@ export interface RadarData {
   board_size: number;
   class_counts: { watchlist: number; early: number; derivative: number };
   top_implied_usd: number;
+  scatter: ScatterPoint[];
+  fit_line: { x1: number; y1: number; x2: number; y2: number };
+  accounting: AccountingSlice[];
   live: LiveRow[];
   rows: RadarRow[];
 }
@@ -503,12 +522,46 @@ export function radarRow(r: BoardRow): RadarRow {
   };
 }
 
+/** The evidence chart's points: traded comps and every priced pre-token row. */
+function evidence(snapshot: Snapshot, board: BoardRow[], ctx: ModelContext): { scatter: ScatterPoint[]; fitLine: RadarData['fit_line']; accounting: AccountingSlice[] } {
+  const isPre = (p: SnapshotProtocol) => p.mcap_usd === null && p.gecko_id === null && p.symbol === null;
+  const scatter: ScatterPoint[] = [];
+  for (const p of snapshot.protocols) {
+    if (isPre(p) || !(p.tvl_usd > 0) || !(p.mcap_usd !== null && p.mcap_usd > 0) || p.category === 'CEX') continue;
+    scatter.push({ x: round4(log10(p.tvl_usd)), y: round4(log10(p.mcap_usd)), kind: 'traded', cat: p.category, slug: p.slug });
+  }
+  for (const r of board) {
+    if (!(r.tvl_usd > 0) || !(r.implied_value_usd > 0)) continue;
+    scatter.push({ x: round4(log10(r.tvl_usd)), y: round4(log10(r.implied_value_usd)), kind: 'pre', cat: r.category, slug: r.slug });
+  }
+  const lo = Math.min(...scatter.map((s) => s.x));
+  const hi = Math.max(...scatter.map((s) => s.x));
+  const fitLine = {
+    x1: round4(lo), y1: round4(ctx.slope * lo + ctx.intercept),
+    x2: round4(hi), y2: round4(ctx.slope * hi + ctx.intercept),
+  };
+
+  // A disjoint accounting of every slug in the sealed snapshot.
+  const pre = new Set(snapshot.protocols.filter(isPre).map((p) => p.slug));
+  const traded = new Set(snapshot.protocols.filter((p) => !isPre(p) && p.category !== 'CEX' && p.tvl_usd > 0 && p.mcap_usd !== null && p.mcap_usd > 0).map((p) => p.slug));
+  const cex = new Set(snapshot.protocols.filter((p) => !pre.has(p.slug) && !traded.has(p.slug) && p.category === 'CEX').map((p) => p.slug));
+  const rest = snapshot.protocols.filter((p) => !pre.has(p.slug) && !traded.has(p.slug) && !cex.has(p.slug)).length;
+  const accounting: AccountingSlice[] = [
+    { label: 'ranked · no token on record', count: pre.size, tone: 'mint' },
+    { label: 'traded comps · fit the curve', count: traded.size, tone: 'sky' },
+    { label: 'exchanges · set aside', count: cex.size, tone: 'amber' },
+    { label: 'versions of a token · set aside', count: rest, tone: 'dim' },
+  ];
+  return { scatter, fitLine, accounting };
+}
+
 /** Everything the dashboard renders, built from the same board the gate reads. */
 export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): { board: BoardRow[]; radar: RadarData } {
   const ctx = fitContext(snapshot, model);
   const board = buildBoard(snapshot, model, ctx);
   const counts = { watchlist: 0, early: 0, derivative: 0 } as RadarData['class_counts'];
   for (const r of board) counts[r.launch_class]++;
+  const ev = evidence(snapshot, board, ctx);
   const radar: RadarData = {
     as_of: snapshot.as_of, source: snapshot.source, floor_usd: snapshot.floor_usd,
     model, model_version: MODEL_VERSION, ctx,
@@ -516,6 +569,9 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     board_size: board.length,
     class_counts: counts,
     top_implied_usd: board.length > 0 ? board[0]!.implied_value_usd : 0,
+    scatter: ev.scatter,
+    fit_line: ev.fitLine,
+    accounting: ev.accounting,
     live: liveRows(snapshot),
     rows: board.map(radarRow),
   };
